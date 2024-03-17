@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"log"
@@ -18,13 +19,20 @@ var (
 	filePath    string
 	dryRun      bool
 	nginxConfig NginxConfig
+	buffer      bytes.Buffer
 )
 
-func (fw *FileWriter) WriteOutput(output string) {
+func WriteOutput(output bytes.Buffer) {
 	if dryRun {
-		fmt.Printf(output)
+		fmt.Print(string(output.String()))
 	} else {
-		_, err := fw.Write([]byte(output))
+		nginxConfFile, err := os.Create("default.conf")
+		if err != nil {
+			log.Fatalf("Error creating Nginx configuration file: %v", err)
+		}
+		defer nginxConfFile.Close()
+		fw := &FileWriter{nginxConfFile}
+		_, err = fw.Write(output.Bytes())
 		if err != nil {
 			log.Fatalf("Error writing to file: %v", err)
 		}
@@ -32,15 +40,6 @@ func (fw *FileWriter) WriteOutput(output string) {
 }
 
 func createMainNginxConfig() {
-	var nginxConfFile *os.File
-	if !dryRun {
-		nginxConfFile, err := os.Create("default.conf")
-		if err != nil {
-			log.Fatalf("Error creating Nginx configuration file: %v", err)
-		}
-		defer nginxConfFile.Close()
-	}
-	fw := &FileWriter{nginxConfFile}
 	for _, z := range nginxConfig.LimitReqZones {
 		output := fmt.Sprintf("limit_req_zone %s", z.Key)
 		if z.Zone != "" {
@@ -50,11 +49,20 @@ func createMainNginxConfig() {
 			output += fmt.Sprintf(" rate=%s", z.Rate)
 		}
 		output += ";\n"
-		fw.WriteOutput(output)
+		buffer.WriteString(output)
 	}
 	for _, server := range nginxConfig.Servers {
-		fw.WriteOutput("include " + server.Name + ".conf;\n")
+		buffer.WriteString("include " + server.Name + ".conf;\n")
 	}
+}
+
+func setKeys(m map[string]string, key string) {
+	for k, v := range m {
+		buffer.WriteString(fmt.Sprintf("\t%s %s \"%s\";\n", key, k, v))
+	}
+}
+func setKey(s string, key string) {
+	buffer.WriteString(fmt.Sprintf("\t%s %s;\n", key, s))
 }
 
 func createServer(i int, server NginxServer) {
@@ -62,37 +70,35 @@ func createServer(i int, server NginxServer) {
 	if server.Name == "" {
 		server.Name = fmt.Sprintf("server_%d", i+1)
 	}
-	var nginxConfFile *os.File
-	if !dryRun {
-		nginxConfFile, err := os.Create(server.Name + ".conf")
-		if err != nil {
-			log.Fatalf("Error creating Nginx configuration file: %v", err)
-		}
-		defer nginxConfFile.Close()
-	}
-	fw := &FileWriter{nginxConfFile}
-	fw.WriteOutput("server {\n")
-	fw.WriteOutput(fmt.Sprintf("\tserver_name %s;\n", server.ServerName))
-	fw.WriteOutput(fmt.Sprintf("\tlisten %s;\n", server.Listen))
-	fw.WriteOutput(fmt.Sprintf("\tssl_certificate %s;\n", server.SslCertificate))
+	buffer.WriteString("server {\n")
+	setKey(server.ServerName, "server_name")
+	setKey(server.Listen, "listen")
+	setKey(server.SslCertificate, "ssl_certificate")
 	globalZone := getGlobalZone(server.LimitReqZone.Name)
 	z := mergeStruct(server.LimitReqZone, globalZone).(LimitReqZone)
-	fw.WriteOutput(fmt.Sprintf("\tlimit_req %s zone=%s;\n", z.Rate, z.Zone))
+	buffer.WriteString(fmt.Sprintf("\tlimit_req %s zone=%s;\n", z.Rate, z.Zone))
+	for _, v := range server.CustomConfig {
+		buffer.WriteString(fmt.Sprintf("\t%s;\n", v))
+	}
+	setKeys(server.AddHeader, "add_header")
+	setKeys(server.ProxySetHeader, "proxy_set_header")
 
 	for _, location := range server.Locations {
-		location = mergeStruct(location, server.LocationDefaults).(Location)
-		fw.WriteOutput(fmt.Sprintf("\tlocation %s {\n", location.Path))
+		buffer.WriteString(fmt.Sprintf("\tlocation %s {\n", location.Path))
 		globalZone := getGlobalZone(location.LimitReqZone.Name)
 		if globalZone != (LimitReqZone{}) {
 			z := mergeStruct(location.LimitReqZone, globalZone).(LimitReqZone)
-			fw.WriteOutput(fmt.Sprintf("\t\tlimit_req %s zone=%s;\n", z.Rate, z.Zone))
+			buffer.WriteString(fmt.Sprintf("\t\tlimit_req %s zone=%s;\n", z.Rate, z.Zone))
 		}
 		for k, v := range location.Configs {
-			fw.WriteOutput(fmt.Sprintf("\t\t%s %s;\n", k, v))
+			buffer.WriteString(fmt.Sprintf("\t\t%s %s;\n", k, v))
 		}
-		fw.WriteOutput("\t}\n")
+		if location.ProxyPass != "" {
+			buffer.WriteString(fmt.Sprintf("\t\tproxy_pass %s;\n", location.ProxyPass))
+		}
+		buffer.WriteString("\t}\n")
 	}
-	fw.WriteOutput("}\n")
+	buffer.WriteString("}\n")
 }
 
 // mergeStruct merges two structs using reflection
@@ -159,4 +165,5 @@ func main() {
 	for i, server := range nginxConfig.Servers {
 		createServer(i, server)
 	}
+	WriteOutput(buffer)
 }

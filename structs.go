@@ -25,6 +25,7 @@ type Location struct {
 	Path         string            `yaml:"path"`
 	Configs      map[string]string `yaml:"configs"`
 	LimitReqZone LimitReqZone      `yaml:"limit_req"`
+	ProxyPass    string            `yaml:"proxy_pass"`
 }
 
 type Servers struct {
@@ -33,14 +34,16 @@ type Servers struct {
 }
 
 type NginxServer struct {
-	Listen               string       `yaml:"listen"`
-	Name                 string       `yaml:"name"`
-	ServerName           string       `yaml:"server_name"`
-	ServerNameInRedirect string       `yaml:"server_name_in_redirect"`
-	LimitReqZone         LimitReqZone `yaml:"limit_req"`
-	SslCertificate       string       `yaml:"ssl_certificate"`
-	SslCertificateKey    string       `yaml:"ssl_certificate_key"`
-	Locations            []Location   `yaml:"locations"`
-	LocationDefaults     Location     `yaml:"locationDefaults"`
-	CustomConfig         []string     `yaml:"custom_config"`
+	Listen               string            `yaml:"listen"`
+	Name                 string            `yaml:"name"`
+	ServerName           string            `yaml:"server_name"`
+	ServerNameInRedirect string            `yaml:"server_name_in_redirect"`
+	LimitReqZone         LimitReqZone      `yaml:"limit_req"`
+	SslCertificate       string            `yaml:"ssl_certificate"`
+	SslCertificateKey    string            `yaml:"ssl_certificate_key"`
+	Locations            []Location        `yaml:"locations"`
+	CustomConfig         []string          `yaml:"custom_config"`
+	AddHeader            map[string]string `yaml:"add_header"`
+	ProxySetHeader       map[string]string `yaml:"proxy_set_header"`
+	Configs              map[string]string `yaml:"configs"`
 }

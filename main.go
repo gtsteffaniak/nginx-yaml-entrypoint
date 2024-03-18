@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"reflect"
+	"strings"
 
 	"github.com/goccy/go-yaml"
 )
@@ -16,28 +16,19 @@ type FileWriter struct {
 }
 
 var (
-	filePath    string
-	dryRun      bool
-	nginxConfig NginxConfig
-	buffer      bytes.Buffer
-)
-
-func WriteOutput(output bytes.Buffer) {
-	if dryRun {
-		fmt.Print(string(output.String()))
-	} else {
-		nginxConfFile, err := os.Create("default.conf")
-		if err != nil {
-			log.Fatalf("Error creating Nginx configuration file: %v", err)
-		}
-		defer nginxConfFile.Close()
-		fw := &FileWriter{nginxConfFile}
-		_, err = fw.Write(output.Bytes())
-		if err != nil {
-			log.Fatalf("Error writing to file: %v", err)
-		}
+	filePath      string
+	dryRun        bool
+	nginxConfig   NginxConfig
+	buffer        bytes.Buffer
+	acmeChallenge = Location{
+		Path: "/.well-known/acme-challenge",
+		Configs: map[string]string{
+			"root":         "/var/www/html",
+			"allow":        "all",
+			"default_type": "text/plain",
+		},
 	}
-}
+)
 
 func createMainNginxConfig() {
 	for _, z := range nginxConfig.LimitReqZones {
@@ -51,45 +42,59 @@ func createMainNginxConfig() {
 		output += ";\n"
 		buffer.WriteString(output)
 	}
-	for _, server := range nginxConfig.Servers {
-		buffer.WriteString("include " + server.Name + ".conf;\n")
-	}
-}
-
-func setKeys(m map[string]string, key string) {
-	for k, v := range m {
-		buffer.WriteString(fmt.Sprintf("\t%s %s \"%s\";\n", key, k, v))
-	}
-}
-func setKey(s string, key string) {
-	buffer.WriteString(fmt.Sprintf("\t%s %s;\n", key, s))
+	//for _, server := range nginxConfig.Servers {
+	//	buffer.WriteString("include " + server.Name + ".conf;\n")
+	//}
 }
 
 func createServer(i int, server NginxServer) {
-	// Create an Nginx configuration file for each server
+	// Create an Nginx configuration for each server
 	if server.Name == "" {
 		server.Name = fmt.Sprintf("server_%d", i+1)
+	}
+	// auto-create 80 redirect to 443
+	if strings.Contains(server.Listen, "443") {
+		// auto-create 80 redirect to 443
+		buffer.WriteString(fmt.Sprintf("server {\n\tlisten 80;\n\tserver_name %s;\n\treturn 301 https://$host$request_uri;\n}\n", server.ServerName))
 	}
 	buffer.WriteString("server {\n")
 	setKey(server.ServerName, "server_name")
 	setKey(server.Listen, "listen")
-	setKey(server.SslCertificate, "ssl_certificate")
 	globalZone := getGlobalZone(server.LimitReqZone.Name)
-	z := mergeStruct(server.LimitReqZone, globalZone).(LimitReqZone)
-	buffer.WriteString(fmt.Sprintf("\tlimit_req %s zone=%s;\n", z.Rate, z.Zone))
+	z := mergeLimitReq(server.LimitReqZone, globalZone)
+	if globalZone != z {
+		buffer.WriteString(fmt.Sprintf("\tlimit_req %s zone=%s;\n", z.Rate, z.Zone))
+	}
 	for _, v := range server.CustomConfig {
 		buffer.WriteString(fmt.Sprintf("\t%s;\n", v))
 	}
 	setKeys(server.AddHeader, "add_header")
 	setKeys(server.ProxySetHeader, "proxy_set_header")
-
+	if server.Configs["ssl_certificate"] != "" {
+		buffer.WriteString(fmt.Sprintf("\tlocation %s {\n", acmeChallenge.Path))
+		setKeys(acmeChallenge.Configs, "\t")
+		buffer.WriteString("\t}\n")
+	}
 	for _, location := range server.Locations {
-		buffer.WriteString(fmt.Sprintf("\tlocation %s {\n", location.Path))
-		globalZone := getGlobalZone(location.LimitReqZone.Name)
-		if globalZone != (LimitReqZone{}) {
-			z := mergeStruct(location.LimitReqZone, globalZone).(LimitReqZone)
-			buffer.WriteString(fmt.Sprintf("\t\tlimit_req %s zone=%s;\n", z.Rate, z.Zone))
+		if location.ApplyDefaults != nil {
+			for _, v := range location.ApplyDefaults {
+				if _, ok := nginxConfig.LocationDefaults[v]; ok {
+					location = mergeLocations(location, nginxConfig.LocationDefaults[v])
+				}
+			}
 		}
+		if location.Path == acmeChallenge.Path {
+			continue
+		}
+		buffer.WriteString(fmt.Sprintf("\tlocation %s {\n", location.Path))
+		setConditions(location.Conditions)
+		globalZone := getGlobalZone(location.LimitReqZone.Name)
+		limit_zone := mergeLimitReq(location.LimitReqZone, globalZone)
+		if globalZone != limit_zone {
+			buffer.WriteString(fmt.Sprintf("\t\tlimit_req %s zone=%s;\n", limit_zone.Rate, limit_zone.Zone))
+		}
+		setKeys(location.AddHeader, "\tadd_header")
+		setKeys(location.ProxySetHeader, "\tproxy_set_header")
 		for k, v := range location.Configs {
 			buffer.WriteString(fmt.Sprintf("\t\t%s %s;\n", k, v))
 		}
@@ -99,48 +104,6 @@ func createServer(i int, server NginxServer) {
 		buffer.WriteString("\t}\n")
 	}
 	buffer.WriteString("}\n")
-}
-
-// mergeStruct merges two structs using reflection
-func mergeStruct(keep, merge interface{}) interface{} {
-	keepValue := reflect.ValueOf(keep)
-	mergeValue := reflect.ValueOf(merge)
-
-	// Make sure both 'keep' and 'merge' are structs
-	if keepValue.Kind() != reflect.Struct || mergeValue.Kind() != reflect.Struct {
-		return nil
-	}
-
-	// Create a copy of the 'merge' struct
-	result := reflect.New(mergeValue.Type()).Elem()
-
-	// Iterate over fields of the 'merge' struct
-	for i := 0; i < mergeValue.NumField(); i++ {
-		field := mergeValue.Field(i)
-		fieldName := mergeValue.Type().Field(i).Name
-
-		// If the field is non-zero, use its value
-		if !reflect.DeepEqual(field.Interface(), reflect.Zero(field.Type()).Interface()) {
-			result.FieldByName(fieldName).Set(field)
-		} else {
-			// If the field is zero, use the value from 'keep'
-			keepField := keepValue.FieldByName(fieldName)
-			if keepField.IsValid() {
-				result.FieldByName(fieldName).Set(keepField)
-			}
-		}
-	}
-
-	return result.Interface()
-}
-
-func getGlobalZone(name string) LimitReqZone {
-	for _, zone := range nginxConfig.LimitReqZones {
-		if zone.Name == name {
-			return zone
-		}
-	}
-	return LimitReqZone{}
 }
 
 func main() {

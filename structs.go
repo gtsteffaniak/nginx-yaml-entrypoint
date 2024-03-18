@@ -1,11 +1,12 @@
 package main
 
 type NginxConfig struct {
-	LimitReqZones    []LimitReqZone   `yaml:"limit_req_zones"`
-	ProxyCachePath   []ProxyCachePath `yaml:"proxy_cache_path"`
-	LimitReqLogLevel string           `yaml:"limit_req_log_level"`
-	LimitReqStatus   int              `yaml:"limit_req_status"`
-	Servers          []NginxServer    `yaml:"servers"`
+	LimitReqZones    []LimitReqZone      `yaml:"limit_req_zones"`
+	ProxyCachePath   []ProxyCachePath    `yaml:"proxy_cache_path"`
+	LimitReqLogLevel string              `yaml:"limit_req_log_level"`
+	LimitReqStatus   int                 `yaml:"limit_req_status"`
+	Servers          []NginxServer       `yaml:"servers"`
+	LocationDefaults map[string]Location `yaml:"locationDefaultConfigs"`
 }
 type LimitReqZone struct {
 	Name  string `yaml:"name"`
@@ -22,12 +23,20 @@ type ProxyCachePath struct {
 }
 
 type Location struct {
-	Path         string            `yaml:"path"`
-	Configs      map[string]string `yaml:"configs"`
-	LimitReqZone LimitReqZone      `yaml:"limit_req"`
-	ProxyPass    string            `yaml:"proxy_pass"`
+	Path           string            `yaml:"path"`
+	Configs        map[string]string `yaml:"configs"`
+	AddHeader      map[string]string `yaml:"add_header"`
+	ProxySetHeader map[string]string `yaml:"proxy_set_header"`
+	LimitReqZone   LimitReqZone      `yaml:"limit_req"`
+	ProxyPass      string            `yaml:"proxy_pass"`
+	Conditions     []Condition       `yaml:"conditions"`
+	ApplyDefaults  []string          `yaml:"applyDefaults"`
 }
 
+type Condition struct {
+	If   string   `yaml:"if"`
+	Then []string `yaml:"then"`
+}
 type Servers struct {
 	Listen    int        `yaml:"listen"`
 	Locations []Location `yaml:"locations"`
@@ -39,8 +48,6 @@ type NginxServer struct {
 	ServerName           string            `yaml:"server_name"`
 	ServerNameInRedirect string            `yaml:"server_name_in_redirect"`
 	LimitReqZone         LimitReqZone      `yaml:"limit_req"`
-	SslCertificate       string            `yaml:"ssl_certificate"`
-	SslCertificateKey    string            `yaml:"ssl_certificate_key"`
 	Locations            []Location        `yaml:"locations"`
 	CustomConfig         []string          `yaml:"custom_config"`
 	AddHeader            map[string]string `yaml:"add_header"`

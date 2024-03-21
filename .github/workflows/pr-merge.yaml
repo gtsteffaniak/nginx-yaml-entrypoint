@@ -1,0 +1,61 @@
+name: pr-merge
+
+on:
+  pull_request:
+    branches:
+      - 'main'
+      - 'dev_v*'
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v4
+        with:
+          go-version: 1.22.0
+      - run: go test -race -v ./...
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v4
+        with:
+          go-version: 1.22.0
+      - run: go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.54.2
+      - run: golangci-lint run
+
+  push_latest_to_registry:
+    needs: [test, lint]
+    name: Push latest
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3.0.0
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3.0.0
+        # Workaround to fix error:
+        # failed to push: failed to copy: io: read/write on closed pipe
+        # See https://github.com/docker/build-push-action/issues/761
+        with:
+          driver-opts: |
+            image=moby/buildkit:v0.10.6
+      - name: Strip v from version number
+        id: modify-json
+        run: |
+          JSON="${{ steps.meta.outputs.tags }}"
+          # Use jq to remove 'v' from the version field
+          JSON=$(echo "$JSON" | sed 's/nginx:v/nginx:/')
+          echo "cleaned_tag=$JSON" >> $GITHUB_OUTPUT
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.modify-json.outputs.cleaned_tag }}
+          labels: ${{ steps.meta.outputs.labels }}

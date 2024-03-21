@@ -6,7 +6,7 @@ type NginxConfig struct {
 	LimitReqLogLevel string              `yaml:"limit_req_log_level"`
 	LimitReqStatus   int                 `yaml:"limit_req_status"`
 	Servers          []NginxServer       `yaml:"servers"`
-	LocationDefaults map[string]Location `yaml:"locationDefaultConfigs"`
+	TemplateConfigs  map[string]Location `yaml:"templateConfigs"`
 }
 type LimitReqZone struct {
 	Name  string `yaml:"name"`
@@ -30,7 +30,7 @@ type Location struct {
 	LimitReqZone   LimitReqZone      `yaml:"limit_req"`
 	ProxyPass      string            `yaml:"proxy_pass"`
 	Conditions     []Condition       `yaml:"conditions"`
-	ApplyDefaults  []string          `yaml:"applyDefaults"`
+	ApplyTemplates []string          `yaml:"applyTemplates"`
 }
 
 type Condition struct {
@@ -53,4 +53,6 @@ type NginxServer struct {
 	AddHeader            map[string]string `yaml:"add_header"`
 	ProxySetHeader       map[string]string `yaml:"proxy_set_header"`
 	Configs              map[string]string `yaml:"configs"`
+	Defaults             Location          `yaml:"defaults"`
+	ApplyTemplates       []string          `yaml:"applyTemplates"`
 }

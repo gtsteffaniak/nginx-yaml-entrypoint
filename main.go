@@ -47,6 +47,23 @@ func createMainNginxConfig() {
 	//}
 }
 
+func setInfo(location Location, indent string) {
+	setConditions(location.Conditions)
+	globalZone := getGlobalZone(location.LimitReqZone.Name)
+	limit_zone := mergeLimitReq(location.LimitReqZone, globalZone)
+	if globalZone != limit_zone {
+		buffer.WriteString(fmt.Sprintf(indent+"\tlimit_req %s zone=%s;\n", limit_zone.Rate, limit_zone.Zone))
+	}
+	setKeys(location.AddHeader, indent+"add_header")
+	setKeys(location.ProxySetHeader, indent+"proxy_set_header")
+	for k, v := range location.Configs {
+		buffer.WriteString(fmt.Sprintf(indent+"\t%s %s;\n", k, v))
+	}
+	if location.ProxyPass != "" {
+		buffer.WriteString(fmt.Sprintf(indent+"\tproxy_pass %s;\n", location.ProxyPass))
+	}
+}
+
 func createServer(i int, server NginxServer) {
 	// Create an Nginx configuration for each server
 	if server.Name == "" {
@@ -68,18 +85,29 @@ func createServer(i int, server NginxServer) {
 	for _, v := range server.CustomConfig {
 		buffer.WriteString(fmt.Sprintf("\t%s;\n", v))
 	}
+	if server.ApplyTemplates != nil {
+		for _, v := range server.ApplyTemplates {
+			if _, ok := nginxConfig.TemplateConfigs[v]; ok {
+				server.Defaults = mergeLocations(server.Defaults, nginxConfig.TemplateConfigs[v])
+			}
+		}
+	}
 	setKeys(server.AddHeader, "add_header")
 	setKeys(server.ProxySetHeader, "proxy_set_header")
+	for k, v := range server.Configs {
+		buffer.WriteString(fmt.Sprintf("\t%s %s;\n", k, v))
+	}
 	if server.Configs["ssl_certificate"] != "" {
 		buffer.WriteString(fmt.Sprintf("\tlocation %s {\n", acmeChallenge.Path))
 		setKeys(acmeChallenge.Configs, "\t")
 		buffer.WriteString("\t}\n")
 	}
+	setInfo(server.Defaults, "")
 	for _, location := range server.Locations {
-		if location.ApplyDefaults != nil {
-			for _, v := range location.ApplyDefaults {
-				if _, ok := nginxConfig.LocationDefaults[v]; ok {
-					location = mergeLocations(location, nginxConfig.LocationDefaults[v])
+		if location.ApplyTemplates != nil {
+			for _, v := range location.ApplyTemplates {
+				if _, ok := nginxConfig.TemplateConfigs[v]; ok {
+					location = mergeLocations(location, nginxConfig.TemplateConfigs[v])
 				}
 			}
 		}
@@ -87,20 +115,7 @@ func createServer(i int, server NginxServer) {
 			continue
 		}
 		buffer.WriteString(fmt.Sprintf("\tlocation %s {\n", location.Path))
-		setConditions(location.Conditions)
-		globalZone := getGlobalZone(location.LimitReqZone.Name)
-		limit_zone := mergeLimitReq(location.LimitReqZone, globalZone)
-		if globalZone != limit_zone {
-			buffer.WriteString(fmt.Sprintf("\t\tlimit_req %s zone=%s;\n", limit_zone.Rate, limit_zone.Zone))
-		}
-		setKeys(location.AddHeader, "\tadd_header")
-		setKeys(location.ProxySetHeader, "\tproxy_set_header")
-		for k, v := range location.Configs {
-			buffer.WriteString(fmt.Sprintf("\t\t%s %s;\n", k, v))
-		}
-		if location.ProxyPass != "" {
-			buffer.WriteString(fmt.Sprintf("\t\tproxy_pass %s;\n", location.ProxyPass))
-		}
+		setInfo(location, "\t")
 		buffer.WriteString("\t}\n")
 	}
 	buffer.WriteString("}\n")
@@ -109,6 +124,7 @@ func createServer(i int, server NginxServer) {
 func main() {
 	flag.StringVar(&filePath, "f", "nginx_config.yaml", "Filepath for nginx_config.yaml")
 	flag.StringVar(&filePath, "file", "nginx_config.yaml", "Filepath for nginx_config.yaml (shorthand)")
+	flag.StringVar(&filePath, "o", "etc/nginx/conf.d/default.conf", "Filepath for nginx_config.yaml (shorthand)")
 	flag.BoolVar(&dryRun, "d", false, "Dry run")
 	flag.BoolVar(&dryRun, "dry-run", false, "Dry run (shorthand)")
 	flag.Parse()
@@ -128,5 +144,6 @@ func main() {
 	for i, server := range nginxConfig.Servers {
 		createServer(i, server)
 	}
+
 	WriteOutput(buffer)
 }

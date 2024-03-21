@@ -114,7 +114,7 @@ func WriteOutput(output bytes.Buffer) {
 	if dryRun {
 		fmt.Print(string(output.String()))
 	} else {
-		nginxConfFile, err := os.Create("default.conf")
+		nginxConfFile, err := os.Create("etc/nginx/conf.d/default.conf")
 		if err != nil {
 			log.Fatalf("Error creating Nginx configuration file: %v", err)
 		}

@@ -6,6 +6,9 @@ on:
       - 'main'
       - 'dev_v*'
       - 'v[0-9]+.[0-9]+.[0-9]+'
+  push:
+    branches:
+      - 'dev_v*'
 
 jobs:
   test:
@@ -43,6 +46,11 @@ jobs:
         with:
           driver-opts: |
             image=moby/buildkit:v0.10.6
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@9ec57ed1fcdbf14dcef7dfbe97b2010124a938b7
+        with:
+          images: gtstef/nginx
       - name: Strip v from version number
         id: modify-json
         run: |
@@ -54,7 +62,6 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          platforms: linux/amd64,linux/arm64,linux/arm/v7
           file: ./Dockerfile
           push: true
           tags: ${{ steps.modify-json.outputs.cleaned_tag }}

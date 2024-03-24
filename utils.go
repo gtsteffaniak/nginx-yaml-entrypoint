@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 )
 
 func mergeLocations(keep, merge Location) Location {
@@ -103,11 +104,13 @@ func getGlobalZone(name string) LimitReqZone {
 
 func setKeys(m map[string]string, key string) {
 	for k, v := range m {
-		buffer.WriteString(fmt.Sprintf("\t%s %s \"%s\";\n", key, k, v))
+		setKey(key, k+v)
 	}
 }
-func setKey(s string, key string) {
-	buffer.WriteString(fmt.Sprintf("\t%s %s;\n", key, s))
+
+func setKey(key string, s string) {
+	writeString := fmt.Sprintf("\t%s %s;\n", key, strings.TrimSuffix(s, ";"))
+	buffer.WriteString(writeString)
 }
 
 func WriteOutput(output bytes.Buffer) {
@@ -129,9 +132,9 @@ func WriteOutput(output bytes.Buffer) {
 
 func setConditions(conditions []Condition) {
 	for _, c := range conditions {
-		buffer.WriteString(fmt.Sprintf("\t\tif (%s) {\n", c.If))
+		buffer.WriteString(fmt.Sprintf("\t\tif (%s) {\n", strings.TrimSuffix(c.If, ";")))
 		for _, statement := range c.Then {
-			buffer.WriteString(fmt.Sprintf("\t\t\t%s;\n", statement))
+			buffer.WriteString(fmt.Sprintf("\t\t\t%s;\n", strings.TrimSuffix(statement, ";")))
 		}
 		buffer.WriteString("\t\t}\n")
 	}

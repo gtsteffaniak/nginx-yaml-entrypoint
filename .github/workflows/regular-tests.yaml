@@ -6,7 +6,26 @@ on:
       - "**"
 
 jobs:
+  build_image:
+    name: Build nginx image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build and cache nginx image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./dockerfile
+          push: false
+          load: false
+          cache-to: |
+            type=gha,mode=max,scope=${{ github.ref_name }}-nginx-yaml-entrypoint
+
   regression-tests:
+    needs: [build_image]
     name: Test - ${{ matrix.service }}
     runs-on: ubuntu-latest
     strategy:
@@ -25,6 +44,9 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
     - name: Set up Docker Compose
       uses: docker/setup-compose-action@v1
 
@@ -38,28 +60,44 @@ jobs:
         # Create mock response
         echo "<h1>Mock Backend Response - ${{ matrix.service }}</h1>" > test/mock-responses/index.html
 
-    - name: Start services and test
+    - name: Build nginx with cache
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        file: ./dockerfile
+        tags: nginx-yaml-entrypoint:test
+        push: false
+        load: true
+        cache-from: |
+          type=gha,scope=${{ github.ref_name }}-nginx-yaml-entrypoint
+          type=gha,scope=main-nginx-yaml-entrypoint
+
+    - name: Update compose file to use cached image
       run: |
-        # Start mock backends and test service
-        docker compose -f docker-compose.test.yml up -d --build \
-          test-${{ matrix.service }} mock-backend-1 mock-backend-2 mock-backend-3
+        sed -i 's|build:|image: nginx-yaml-entrypoint:test #build:|' docker-compose.test.yml
+        sed -i 's|context: .|#context: .|' docker-compose.test.yml
+        sed -i 's|dockerfile: dockerfile|#dockerfile: dockerfile|' docker-compose.test.yml
+
+    - name: Run test
+      run: |
+        # Start the test service and dependencies
+        docker compose -f docker-compose.test.yml up -d test-${{ matrix.service }}
         
-        # Wait for health checks (built into compose file)
-        echo "Waiting for services to be healthy..."
-        timeout 120 bash -c 'until [ "$(docker compose -f docker-compose.test.yml ps test-${{ matrix.service }} --format json | jq -r ".[0].Health")" = "healthy" ]; do sleep 2; done'
+        # Wait for health check to pass (built into compose file)
+        echo "Waiting for test-${{ matrix.service }} to be healthy..."
+        timeout 120 bash -c 'until docker compose -f docker-compose.test.yml ps test-${{ matrix.service }} | grep -q "healthy"; do sleep 2; done'
         
-        echo "✅ ${{ matrix.service }} test passed successfully!"
+        echo "✅ ${{ matrix.service }} test passed!"
 
     - name: Show logs on failure
       if: failure()
       run: |
-        echo "=== test-${{ matrix.service }} logs ==="
         docker compose -f docker-compose.test.yml logs test-${{ matrix.service }}
 
     - name: Cleanup
       if: always()
       run: |
-        docker compose -f docker-compose.test.yml down -v --remove-orphans
+        docker compose -f docker-compose.test.yml down -v
 
   test:
     runs-on: ubuntu-latest

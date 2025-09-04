@@ -7,7 +7,36 @@ on:
 
 jobs:
   regression-tests:
+    name: Test - ${{ matrix.name }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: simple-proxy
+            service: test-simple-proxy
+            port: 8001
+          - name: api-gateway
+            service: test-api-gateway
+            port: 8002
+          - name: comprehensive
+            service: test-comprehensive
+            port: 8003
+          - name: load-balancer
+            service: test-load-balancer
+            port: 8004
+          - name: ssl-website
+            service: test-ssl-website
+            port: 8005
+          - name: websocket-app
+            service: test-websocket-app
+            port: 8006
+          - name: template-system
+            service: test-template-system
+            port: 8007
+          - name: simple-templates
+            service: test-simple-templates
+            port: 8008
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
@@ -15,20 +44,51 @@ jobs:
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    - name: Run example regression tests
+    - name: Start mock backends
       run: |
-        chmod +x test/run-tests.sh
-        ./test/run-tests.sh
+        docker-compose -f docker-compose.test.yml up -d mock-backend-1 mock-backend-2 mock-backend-3
+        # Wait for backends to be ready
+        sleep 10
+
+    - name: Build and start ${{ matrix.name }} test
+      run: |
+        docker-compose -f docker-compose.test.yml up -d ${{ matrix.service }}
+        # Wait for service to be ready
+        sleep 15
+
+    - name: Test ${{ matrix.name }} configuration
+      run: |
+        # Wait for health check to pass
+        timeout 60 bash -c 'until docker-compose -f docker-compose.test.yml ps ${{ matrix.service }} | grep -q "healthy"; do sleep 2; done'
+        
+        # Test basic connectivity
+        curl -f http://localhost:${{ matrix.port }}/ || exit 1
+        
+        # Additional service-specific tests can be added here
+        echo "${{ matrix.name }} test passed successfully"
+
+    - name: Get container logs on failure
+      if: failure()
+      run: |
+        echo "=== ${{ matrix.service }} logs ==="
+        docker-compose -f docker-compose.test.yml logs ${{ matrix.service }}
+        echo "=== Mock backend logs ==="
+        docker-compose -f docker-compose.test.yml logs mock-backend-1 mock-backend-2 mock-backend-3
 
     - name: Archive test logs on failure
       if: failure()
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
-        name: test-logs
+        name: test-logs-${{ matrix.name }}
         path: |
           test/logs/
           docker-compose.test.yml
         retention-days: 5
+
+    - name: Cleanup
+      if: always()
+      run: |
+        docker-compose -f docker-compose.test.yml down -v
 
   test:
     runs-on: ubuntu-latest

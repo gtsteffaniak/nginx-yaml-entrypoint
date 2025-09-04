@@ -6,7 +6,121 @@ on:
       - 'dev_v*'
 
 jobs:
+  test_examples:
+    name: Test Examples
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        example:
+          - simple-proxy
+          - api-gateway
+          - comprehensive
+          - load-balancer
+          - ssl-website
+          - websocket-app
+          - template-system
+          - simple-templates
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build nginx image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./dockerfile
+          load: true
+          tags: nginx-yaml-entrypoint:test
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Setup test environment
+        run: |
+          mkdir -p test/ssl test/mock-responses
+
+          # Generate test SSL certificates
+          openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+            -keyout test/ssl/key.pem \
+            -out test/ssl/cert.pem \
+            -subj "/C=US/ST=Test/L=Test/O=Test/OU=Test/CN=localhost"
+
+          # Create mock response
+          cat > test/mock-responses/index.html <<EOF
+          <!DOCTYPE html>
+          <html>
+          <head><title>Mock Backend - ${{ matrix.example }}</title></head>
+          <body>
+              <h1>Mock Backend Response</h1>
+              <p>Example: ${{ matrix.example }}</p>
+              <p>Status: nginx-yaml-entrypoint working!</p>
+          </body>
+          </html>
+          EOF
+
+      - name: Test ${{ matrix.example }} example
+        run: |
+          # Update docker-compose to use the built image
+          sed -i 's|build:|image: nginx-yaml-entrypoint:test #build:|' docker-compose.test.yml
+          sed -i 's|context: .|#context: .|' docker-compose.test.yml
+          sed -i 's|dockerfile: dockerfile|#dockerfile: dockerfile|' docker-compose.test.yml
+
+          # Start the specific test service and dependencies
+          docker-compose -f docker-compose.test.yml up -d test-${{ matrix.example }} mock-backend-1 mock-backend-2 mock-backend-3
+
+          # Wait for service to be healthy
+          echo "Waiting for test-${{ matrix.example }} to be healthy..."
+          for i in {1..30}; do
+            if docker-compose -f docker-compose.test.yml ps | grep "test-${{ matrix.example }}.*healthy"; then
+              echo "✅ Service is healthy"
+              break
+            elif docker-compose -f docker-compose.test.yml ps | grep "test-${{ matrix.example }}.*unhealthy"; then
+              echo "❌ Service is unhealthy"
+              docker-compose -f docker-compose.test.yml logs test-${{ matrix.example }}
+              exit 1
+            fi
+            echo "Attempt $i/30: Waiting for health check..."
+            sleep 2
+          done
+
+          # Final check
+          if ! docker-compose -f docker-compose.test.yml ps | grep -q "test-${{ matrix.example }}.*healthy"; then
+            echo "❌ Health check timeout"
+            docker-compose -f docker-compose.test.yml logs test-${{ matrix.example }}
+            exit 1
+          fi
+
+          # Test for 10 seconds to ensure stability
+          echo "Testing stability for 10 seconds..."
+          sleep 10
+
+          if docker-compose -f docker-compose.test.yml ps | grep -q "test-${{ matrix.example }}.*healthy"; then
+            echo "✅ ${{ matrix.example }} test passed"
+          else
+            echo "❌ ${{ matrix.example }} test failed"
+            docker-compose -f docker-compose.test.yml logs test-${{ matrix.example }}
+            exit 1
+          fi
+
+      - name: Cleanup test services
+        if: always()
+        run: |
+          docker-compose -f docker-compose.test.yml down --remove-orphans || true
+
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-logs-${{ matrix.example }}
+          path: |
+            test/
+          retention-days: 3
+
   push_latest_to_registry:
+    needs: test_examples
     name: Push latest
     runs-on: ubuntu-latest
     steps:
@@ -43,7 +157,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./Dockerfile
+          file: ./dockerfile
           push: true
           tags: ${{ steps.modify-json.outputs.cleaned_tag }}
           labels: ${{ steps.meta.outputs.labels }}

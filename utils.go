@@ -151,7 +151,11 @@ func WriteOutput(output bytes.Buffer) {
 		if err != nil {
 			log.Fatalf("Error creating Nginx configuration file '%s': %v", outputPath, err)
 		}
-		defer nginxConfFile.Close()
+		defer func() {
+			if closeErr := nginxConfFile.Close(); closeErr != nil {
+				log.Printf("Warning: Error closing Nginx configuration file: %v", closeErr)
+			}
+		}()
 
 		fw := &FileWriter{nginxConfFile}
 		_, err = fw.Write(output.Bytes())

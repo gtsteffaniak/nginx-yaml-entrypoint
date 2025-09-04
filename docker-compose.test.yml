@@ -1,0 +1,187 @@
+# Docker Compose test configuration for nginx-yaml-entrypoint examples
+
+services:
+  # Test simple reverse proxy
+  test-simple-proxy:
+    build:
+      context: .
+      dockerfile: dockerfile
+    container_name: test-simple-proxy
+    volumes:
+      - ./examples/simple-proxy.yaml:/etc/nginx/yaml/main.yaml:ro
+    ports:
+      - "8001:80"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/", "||", "exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    networks:
+      - test-network
+
+  # Test API gateway configuration
+  test-api-gateway:
+    build:
+      context: .
+      dockerfile: dockerfile
+    container_name: test-api-gateway
+    volumes:
+      - ./examples/api-gateway.yaml:/etc/nginx/yaml/main.yaml:ro
+    ports:
+      - "8002:80"
+      - "8443:443"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/", "||", "exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    networks:
+      - test-network
+
+  # Test comprehensive configuration
+  test-comprehensive:
+    build:
+      context: .
+      dockerfile: dockerfile
+    container_name: test-comprehensive
+    volumes:
+      - ./examples/comprehensive.yaml:/etc/nginx/yaml/main.yaml:ro
+    ports:
+      - "8003:80"
+      - "8444:443"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/", "||", "exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    networks:
+      - test-network
+
+  # Test load balancer configuration
+  test-load-balancer:
+    build:
+      context: .
+      dockerfile: dockerfile
+    container_name: test-load-balancer
+    volumes:
+      - ./examples/load-balancer.yaml:/etc/nginx/yaml/main.yaml:ro
+    ports:
+      - "8004:80"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/", "||", "exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    networks:
+      - test-network
+
+  # Test SSL website configuration
+  test-ssl-website:
+    build:
+      context: .
+      dockerfile: dockerfile
+    container_name: test-ssl-website
+    volumes:
+      - ./examples/ssl-website.yaml:/etc/nginx/yaml/main.yaml:ro
+      - ./test/ssl:/etc/ssl:ro
+    ports:
+      - "8005:80"
+      - "8445:443"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/", "||", "exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    networks:
+      - test-network
+
+  # Test websocket application
+  test-websocket-app:
+    build:
+      context: .
+      dockerfile: dockerfile
+    container_name: test-websocket-app
+    volumes:
+      - ./examples/websocket-app.yaml:/etc/nginx/yaml/main.yaml:ro
+    ports:
+      - "8006:80"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/", "||", "exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    networks:
+      - test-network
+
+  # Test template system
+  test-template-system:
+    build:
+      context: .
+      dockerfile: dockerfile
+    container_name: test-template-system
+    volumes:
+      - ./examples/template-system.yaml:/etc/nginx/yaml/main.yaml:ro
+    ports:
+      - "8007:80"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/", "||", "exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    networks:
+      - test-network
+
+  # Test simple templates
+  test-simple-templates:
+    build:
+      context: .
+      dockerfile: dockerfile
+    container_name: test-simple-templates
+    volumes:
+      - ./examples/simple-templates.yaml:/etc/nginx/yaml/main.yaml:ro
+    ports:
+      - "8008:80"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/", "||", "exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    networks:
+      - test-network
+
+  # Mock backend services for testing
+  mock-backend-1:
+    image: nginx:alpine
+    container_name: mock-backend-1
+    volumes:
+      - ./test/mock-responses:/usr/share/nginx/html:ro
+    networks:
+      - test-network
+
+  mock-backend-2:
+    image: nginx:alpine
+    container_name: mock-backend-2
+    volumes:
+      - ./test/mock-responses:/usr/share/nginx/html:ro
+    networks:
+      - test-network
+
+  mock-backend-3:
+    image: nginx:alpine
+    container_name: mock-backend-3
+    volumes:
+      - ./test/mock-responses:/usr/share/nginx/html:ro
+    networks:
+      - test-network
+
+networks:
+  test-network:
+    driver: bridge

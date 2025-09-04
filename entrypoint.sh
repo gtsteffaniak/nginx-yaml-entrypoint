@@ -4,5 +4,7 @@
 set -e
 
 if test -f /etc/nginx/yaml/main.yaml; then
-    nginx-yaml-entrypoint -f /etc/nginx/yaml/main.yaml
+    echo "Converting YAML configuration to nginx config..."
+    nginx-yaml-entrypoint -f /etc/nginx/yaml/main.yaml -o /etc/nginx/nginx.conf
+    echo "Configuration generated successfully"
 fi

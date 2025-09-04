@@ -1,0 +1,62 @@
+version: '3.8'
+
+# Simple setup for manual testing of examples
+services:
+  nginx-test:
+    build:
+      context: .
+      dockerfile: dockerfile
+    ports:
+      - "8080:80"
+      - "8443:443"
+    volumes:
+      # Change this line to test different examples:
+      - ./examples/simple-proxy.yaml:/etc/nginx/yaml/main.yaml:ro
+      - ./test/ssl:/etc/ssl:ro
+    depends_on:
+      - app1
+      - app2
+      - app3
+      - backend
+    networks:
+      - manual-test
+
+  # Mock backend services that examples reference
+  app1:
+    image: nginx:alpine
+    volumes:
+      - ./test/mock-responses:/usr/share/nginx/html:ro
+    networks:
+      - manual-test
+
+  app2:
+    image: nginx:alpine
+    volumes:
+      - ./test/mock-responses:/usr/share/nginx/html:ro
+    networks:
+      - manual-test
+
+  app3:
+    image: nginx:alpine  
+    volumes:
+      - ./test/mock-responses:/usr/share/nginx/html:ro
+    networks:
+      - manual-test
+
+  app4:
+    image: nginx:alpine
+    volumes:
+      - ./test/mock-responses:/usr/share/nginx/html:ro
+    networks:
+      - manual-test
+
+  backend:
+    image: nginx:alpine
+    volumes:
+      - ./test/mock-responses:/usr/share/nginx/html:ro
+    networks:
+      - manual-test
+
+networks:
+  manual-test:
+    driver: bridge

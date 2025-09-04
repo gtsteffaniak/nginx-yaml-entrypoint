@@ -25,6 +25,9 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Set up Docker Compose
+      uses: docker/setup-compose-action@v1
+
     - name: Setup test environment
       run: |
         mkdir -p test/ssl test/mock-responses
@@ -35,13 +38,28 @@ jobs:
         # Create mock response
         echo "<h1>Mock Backend Response - ${{ matrix.service }}</h1>" > test/mock-responses/index.html
 
-    - name: Run Docker Compose Test
-      uses: adambirds/docker-compose-action@v1.5.0
-      with:
-        compose-file: './docker-compose.test.yml'
-        up-flags: '--build'
-        down-flags: '--volumes --remove-orphans'
-        services: 'test-${{ matrix.service }} mock-backend-1 mock-backend-2 mock-backend-3'
+    - name: Start services and test
+      run: |
+        # Start mock backends and test service
+        docker compose -f docker-compose.test.yml up -d --build \
+          test-${{ matrix.service }} mock-backend-1 mock-backend-2 mock-backend-3
+        
+        # Wait for health checks (built into compose file)
+        echo "Waiting for services to be healthy..."
+        timeout 120 bash -c 'until [ "$(docker compose -f docker-compose.test.yml ps test-${{ matrix.service }} --format json | jq -r ".[0].Health")" = "healthy" ]; do sleep 2; done'
+        
+        echo "✅ ${{ matrix.service }} test passed successfully!"
+
+    - name: Show logs on failure
+      if: failure()
+      run: |
+        echo "=== test-${{ matrix.service }} logs ==="
+        docker compose -f docker-compose.test.yml logs test-${{ matrix.service }}
+
+    - name: Cleanup
+      if: always()
+      run: |
+        docker compose -f docker-compose.test.yml down -v --remove-orphans
 
   test:
     runs-on: ubuntu-latest

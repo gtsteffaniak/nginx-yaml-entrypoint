@@ -1,0 +1,40 @@
+# Load balancer with multiple backends
+# Shows upstream configuration and health monitoring
+
+upstreams:
+  - name: app_pool
+    method: least_conn
+    keepalive: 32
+    servers:
+      - address: "app1:3000"
+        weight: 3
+      - address: "app2:3000"
+        weight: 2
+      - address: "app3:3000"
+        weight: 1
+      - address: "app4:3000"
+        backup: true
+
+# Rate limiting for abuse protection  
+limit_req_zones:
+  - name: global
+    key: $binary_remote_addr
+    zone: global:10m
+    rate: 10r/s
+
+servers:
+  - listen: "80"
+    server_name: "lb.example.com"
+    
+    locations:
+      - path: "/"
+        proxy_pass: "http://app_pool"
+        applyTemplates:
+          - reverse_proxy
+        limit_req:
+          zone: global
+          burst: 20
+      
+      - path: "/health"
+        applyTemplates:
+          - health_check

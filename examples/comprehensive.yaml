@@ -1,0 +1,324 @@
+# Comprehensive nginx YAML configuration example
+# This demonstrates all available features and best practices
+
+# Global nginx settings
+worker_processes: auto
+worker_connections: 1024
+keepalive_timeout: 65s
+client_max_body_size: 100m
+server_tokens: "off"
+
+# Logging configuration
+access_log:
+  path: /var/log/nginx/access.log
+  format: main
+
+error_log:
+  path: /var/log/nginx/error.log
+  level: warn
+
+# Gzip compression
+gzip:
+  enabled: true
+  vary: true
+  proxied: any
+  comp_level: 6
+  min_length: 1000
+  types:
+    - text/plain
+    - text/css
+    - text/xml
+    - text/javascript
+    - application/xml+rss
+    - application/javascript
+    - application/json
+
+# Security headers (applied globally)
+security_headers:
+  hsts:
+    max_age: 31536000
+    include_subdomains: true
+    preload: true
+  csp: "default-src 'self'; script-src 'self' 'unsafe-inline' cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline'"
+  x_frame_options: SAMEORIGIN
+  x_content_type_options: nosniff
+  referrer_policy: strict-origin-when-cross-origin
+  cors:
+    allow_origin: "*"
+    allow_methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    allow_headers: ["Content-Type", "Authorization"]
+    max_age: 86400
+
+# Rate limiting zones
+limit_req_zones:
+  - name: global
+    key: $binary_remote_addr
+    zone: global:10m
+    rate: 10r/s
+  - name: api
+    key: $binary_remote_addr
+    zone: api:10m
+    rate: 100r/s
+  - name: login
+    key: $binary_remote_addr
+    zone: login:10m
+    rate: 5r/m
+
+# Proxy caching
+proxy_cache_path:
+  - name: static_cache
+    path: /var/cache/nginx/static
+    levels: "1:2"
+    keys_zone: "static:100m"
+    max_size: 1g
+    inactive: 60m
+    use_stale_error: true
+  - name: api_cache
+    path: /var/cache/nginx/api
+    levels: "1:2"
+    keys_zone: "api:50m"
+    max_size: 500m
+    inactive: 10m
+
+# Load balancing upstreams
+upstreams:
+  - name: app_servers
+    method: least_conn
+    keepalive: 32
+    keepalive_requests: 100
+    keepalive_timeout: 60s
+    servers:
+      - address: "app1:3000"
+        weight: 3
+        max_fails: 3
+        fail_timeout: 30s
+      - address: "app2:3000"
+        weight: 2
+        max_fails: 3
+        fail_timeout: 30s
+      - address: "app3:3000"
+        backup: true
+  - name: api_servers
+    method: round_robin
+    servers:
+      - address: "api1:8080"
+      - address: "api2:8080"
+      - address: "api3:8080"
+
+# Template configurations for reusable blocks
+templateConfigs:
+  # SSL/TLS template with modern security settings
+  modern_ssl:
+    configs:
+      # These will be moved to SSL config section in server
+      ssl_protocols: "TLSv1.2 TLSv1.3"
+      ssl_ciphers: "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384"
+      ssl_prefer_server_ciphers: "off"
+      ssl_session_cache: "shared:SSL:10m"
+      ssl_session_timeout: "10m"
+      ssl_session_tickets: "off"
+
+  # WebSocket support template
+  websocket_support:
+    proxy_set_header:
+      Upgrade: "$http_upgrade"
+      Connection: "$http_connection"
+      X-Real-IP: "$remote_addr"
+      X-Forwarded-For: "$proxy_add_x_forwarded_for"
+      X-Forwarded-Proto: "$scheme"
+    configs:
+      proxy_http_version: "1.1"
+      proxy_cache_bypass: "$http_upgrade"
+      proxy_read_timeout: 86400s
+      proxy_send_timeout: 86400s
+
+  # API proxy template with caching and auth
+  api_proxy:
+    proxy_set_header:
+      Host: "$host"
+      X-Real-IP: "$remote_addr"
+      X-Forwarded-For: "$proxy_add_x_forwarded_for"
+      X-Forwarded-Proto: "$scheme"
+      Authorization: "$http_authorization"
+    configs:
+      proxy_buffering: "on"
+      proxy_buffer_size: "4k"
+      proxy_buffers: "8 4k"
+      proxy_connect_timeout: "30s"
+      proxy_send_timeout: "30s"
+      proxy_read_timeout: "30s"
+      proxy_cache: api
+      proxy_cache_valid: "200 10m"
+      proxy_cache_key: "$scheme$request_method$host$request_uri"
+    proxy_cache_bypass:
+      - "$http_cache_control"
+    limit_req:
+      zone: api
+      burst: 20
+
+  # Static file serving template
+  static_files:
+    configs:
+      expires: 1y
+      add_header: "Cache-Control: public, immutable"
+      access_log: "off"
+    limit_req:
+      zone: global
+      burst: 50
+
+  # Authentication template
+  auth_required:
+    configs:
+      auth_request: "/auth/verify"
+    auth_request_set:
+      "$user": "$upstream_http_x_user"
+      "$auth_status": "$upstream_status"
+    proxy_set_header:
+      X-Forwarded-User: "$user"
+
+# Server configurations
+servers:
+  # Main application server with SSL
+  - listen: "443 ssl http2"
+    server_name: "example.com www.example.com"
+    
+    ssl:
+      certificate: "/etc/letsencrypt/live/example.com/fullchain.pem"
+      certificate_key: "/etc/letsencrypt/live/example.com/privkey.pem"
+      protocols: ["TLSv1.2", "TLSv1.3"]
+      ciphers: "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256"
+      session_cache: "shared:SSL:10m"
+      session_timeout: "10m"
+      stapling: true
+      stapling_verify: true
+      trusted_certificate: "/etc/letsencrypt/live/example.com/chain.pem"
+
+    # Apply template for SSL settings  
+    applyTemplates:
+      - modern_ssl
+
+    # Server-level rate limiting
+    limit_req:
+      zone: global
+      burst: 10
+
+    # Error pages
+    error_page:
+      "404": "/404.html"
+      "500 502 503 504": "/50x.html"
+
+    # Custom server configs
+    configs:
+      server_name_in_redirect: "off"
+      absolute_redirect: "off"
+
+    locations:
+      # Main app location with load balancing
+      - path: "/"
+        proxy_pass: "http://app_servers"
+        applyTemplates:
+          - api_proxy
+        configs:
+          proxy_cache: "off"  # Override template cache for main app
+
+      # API endpoints with caching and rate limiting
+      - path: "~ ^/api/"
+        proxy_pass: "http://api_servers"
+        applyTemplates:
+          - api_proxy
+        limit_req:
+          zone: api
+          burst: 50
+
+      # WebSocket endpoint
+      - path: "/ws"
+        proxy_pass: "http://app_servers"
+        applyTemplates:
+          - websocket_support
+
+      # Static assets with aggressive caching
+      - path: "~ ^/(css|js|img|fonts)/"
+        root: "/var/www/static"
+        applyTemplates:
+          - static_files
+
+      # Protected admin area
+      - path: "/admin"
+        proxy_pass: "http://app_servers"
+        applyTemplates:
+          - auth_required
+          - api_proxy
+        allow:
+          - "192.168.1.0/24"
+          - "10.0.0.0/8"
+        deny:
+          - all
+
+      # Health check endpoint (no auth, no rate limiting)
+      - path: "/health"
+        proxy_pass: "http://app_servers"
+        proxy_set_header:
+          Host: "$host"
+        configs:
+          access_log: "off"
+
+      # File upload endpoint with custom settings
+      - path: "/upload"
+        proxy_pass: "http://app_servers"
+        configs:
+          client_max_body_size: "50m"
+          proxy_request_buffering: "off"
+          proxy_read_timeout: "300s"
+        limit_req:
+          zone: global
+          burst: 5
+
+  # API-only server (different port/subdomain)
+  - listen: "443 ssl"
+    server_name: "api.example.com"
+    
+    ssl:
+      certificate: "/etc/letsencrypt/live/api.example.com/fullchain.pem"
+      certificate_key: "/etc/letsencrypt/live/api.example.com/privkey.pem"
+
+    applyTemplates:
+      - modern_ssl
+
+    # Server-level CORS for API
+    add_header:
+      "Access-Control-Allow-Origin": "*"
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS"
+
+    locations:
+      - path: "/"
+        proxy_pass: "http://api_servers"
+        applyTemplates:
+          - api_proxy
+
+      # API documentation (static files)
+      - path: "/docs"
+        root: "/var/www/api-docs"
+        index: ["index.html"]
+        try_files: "$uri $uri/ =404"
+
+  # Development/staging server (HTTP only)
+  - listen: "80"
+    server_name: "dev.example.com staging.example.com"
+    
+    # Custom config for development
+    custom_config:
+      - "add_header X-Environment $host always"
+      - "error_log /var/log/nginx/dev-error.log debug"
+
+    locations:
+      - path: "/"
+        proxy_pass: "http://app_servers"
+        proxy_set_header:
+          Host: "$host"
+          X-Dev-Mode: "true"
+
+# Custom global configurations not covered by structured options
+custom_global_config:
+  - "map $http_upgrade $connection_upgrade"
+  - "default upgrade"
+  - "''"      close"

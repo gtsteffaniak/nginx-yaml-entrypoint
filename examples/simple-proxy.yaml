@@ -1,0 +1,11 @@
+# Simple reverse proxy example
+# Perfect for basic containerized applications
+
+servers:
+  - listen: "80"
+    server_name: "app.local"
+    locations:
+      - path: "/"
+        proxy_pass: "http://backend:3000"
+        applyTemplates:
+          - reverse_proxy

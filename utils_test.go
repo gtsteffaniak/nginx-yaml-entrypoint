@@ -166,6 +166,7 @@ func TestWriteOutput(t *testing.T) {
 func Test_setConditions(t *testing.T) {
 	type args struct {
 		conditions []Condition
+		indent     string
 	}
 	tests := []struct {
 		name string
@@ -175,7 +176,7 @@ func Test_setConditions(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			setConditions(tt.args.conditions)
+			setConditions(tt.args.conditions, tt.args.indent)
 		})
 	}
 }

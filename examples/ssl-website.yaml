@@ -1,0 +1,29 @@
+# SSL-enabled website with security headers
+# Demonstrates SSL configuration and security best practices
+
+servers:
+  - listen: "443 ssl http2"
+    server_name: "secure.example.com"
+    
+    ssl:
+      certificate: "/etc/letsencrypt/live/secure.example.com/fullchain.pem"
+      certificate_key: "/etc/letsencrypt/live/secure.example.com/privkey.pem"
+      protocols: ["TLSv1.2", "TLSv1.3"]
+      session_cache: "shared:SSL:10m"
+      session_timeout: "10m"
+      stapling: true
+      stapling_verify: true
+    
+    applyTemplates:
+      - security_headers
+    
+    locations:
+      - path: "/"
+        proxy_pass: "http://app:8080"
+        applyTemplates:
+          - reverse_proxy
+      
+      - path: "/static/"
+        root: "/var/www"
+        applyTemplates:
+          - static_files

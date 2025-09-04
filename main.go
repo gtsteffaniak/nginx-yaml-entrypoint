@@ -271,11 +271,6 @@ func main() {
 	flag.BoolVar(&validate, "validate", false, "Validate configuration only (shorthand)")
 	flag.BoolVar(&verbose, "verbose", false, "Verbose output")
 	flag.BoolVar(&listTemplates, "list-templates", false, "List all available built-in templates")
-	
-	var multiFile bool
-	var confDir string
-	flag.BoolVar(&multiFile, "multi-file", false, "Generate separate .conf files for each service (like conf.d structure)")
-	flag.StringVar(&confDir, "conf-dir", "/etc/nginx/conf.d", "Directory for multi-file output (default: /etc/nginx/conf.d)")
 
 	// Custom usage function
 	flag.Usage = func() {

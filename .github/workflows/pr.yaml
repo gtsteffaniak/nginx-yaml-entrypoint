@@ -69,17 +69,17 @@ jobs:
           sed -i 's|dockerfile: dockerfile|#dockerfile: dockerfile|' docker-compose.test.yml
 
           # Start the specific test service and dependencies
-          docker-compose -f docker-compose.test.yml up -d test-${{ matrix.example }} mock-backend-1 mock-backend-2 mock-backend-3
+          docker compose -f docker-compose.test.yml up -d test-${{ matrix.example }} mock-backend-1 mock-backend-2 mock-backend-3
 
           # Wait for service to be healthy
           echo "Waiting for test-${{ matrix.example }} to be healthy..."
           for i in {1..30}; do
-            if docker-compose -f docker-compose.test.yml ps | grep "test-${{ matrix.example }}.*healthy"; then
+            if docker compose -f docker-compose.test.yml ps | grep "test-${{ matrix.example }}.*healthy"; then
               echo "✅ Service is healthy"
               break
-            elif docker-compose -f docker-compose.test.yml ps | grep "test-${{ matrix.example }}.*unhealthy"; then
+            elif docker compose -f docker-compose.test.yml ps | grep "test-${{ matrix.example }}.*unhealthy"; then
               echo "❌ Service is unhealthy"
-              docker-compose -f docker-compose.test.yml logs test-${{ matrix.example }}
+              docker compose -f docker-compose.test.yml logs test-${{ matrix.example }}
               exit 1
             fi
             echo "Attempt $i/30: Waiting for health check..."
@@ -87,9 +87,9 @@ jobs:
           done
 
           # Final check
-          if ! docker-compose -f docker-compose.test.yml ps | grep -q "test-${{ matrix.example }}.*healthy"; then
+          if ! docker compose -f docker-compose.test.yml ps | grep -q "test-${{ matrix.example }}.*healthy"; then
             echo "❌ Health check timeout"
-            docker-compose -f docker-compose.test.yml logs test-${{ matrix.example }}
+            docker compose -f docker-compose.test.yml logs test-${{ matrix.example }}
             exit 1
           fi
 
@@ -97,22 +97,22 @@ jobs:
           echo "Testing stability for 10 seconds..."
           sleep 10
 
-          if docker-compose -f docker-compose.test.yml ps | grep -q "test-${{ matrix.example }}.*healthy"; then
+          if docker compose -f docker-compose.test.yml ps | grep -q "test-${{ matrix.example }}.*healthy"; then
             echo "✅ ${{ matrix.example }} test passed"
           else
             echo "❌ ${{ matrix.example }} test failed"
-            docker-compose -f docker-compose.test.yml logs test-${{ matrix.example }}
+            docker compose -f docker-compose.test.yml logs test-${{ matrix.example }}
             exit 1
           fi
 
       - name: Cleanup test services
         if: always()
         run: |
-          docker-compose -f docker-compose.test.yml down --remove-orphans || true
+          docker compose -f docker-compose.test.yml down --remove-orphans || true
 
       - name: Upload test logs on failure
         if: failure()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: test-logs-${{ matrix.example }}
           path: |

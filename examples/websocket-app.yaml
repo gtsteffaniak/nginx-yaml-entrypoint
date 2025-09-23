@@ -1,0 +1,40 @@
+# WebSocket application with proper upgrade handling
+# Shows WebSocket configuration with fallback
+
+# Global map for connection upgrades
+custom_global_config:
+  - "map $http_upgrade $connection_upgrade"
+  - "default upgrade"
+  - "\"\" close"
+
+servers:
+  - listen: "443 ssl"
+    server_name: "chat.example.com"
+    
+    ssl:
+      certificate: "/etc/ssl/chat.crt" 
+      certificate_key: "/etc/ssl/chat.key"
+    
+    applyTemplates:
+      - modern_ssl
+    
+    locations:
+      # WebSocket endpoint
+      - path: "/ws"
+        proxy_pass: "http://chat-backend:3000"
+        applyTemplates:
+          - websocket
+      
+      # Regular HTTP API
+      - path: "/api"
+        proxy_pass: "http://chat-backend:3000"
+        applyTemplates:
+          - reverse_proxy
+      
+      # Static assets
+      - path: "/"
+        root: "/var/www/chat-app"
+        index: ["index.html"]
+        try_files: "$uri $uri/ /index.html"
+        applyTemplates:
+          - static_files

@@ -1,5 +1,5 @@
 
-FROM golang:1.22-alpine as builder
+FROM golang:1.25-alpine AS builder
 WORKDIR /app/
 COPY [ "*.go", "go.*", "./" ]
 RUN go build -ldflags='-w -s' .

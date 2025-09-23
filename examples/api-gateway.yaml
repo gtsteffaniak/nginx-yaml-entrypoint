@@ -1,0 +1,108 @@
+# API Gateway with CORS, rate limiting, and caching
+# Perfect for microservices architecture
+
+# Caching configuration
+proxy_cache_path:
+  - name: api_cache
+    path: /var/cache/nginx/api
+    keys_zone: "api:100m"
+    max_size: 1g
+    inactive: 60m
+
+# Multiple upstream services
+upstreams:
+  - name: user_service
+    servers:
+      - address: "user-svc:8080"
+      - address: "user-svc-2:8080"
+  
+  - name: order_service  
+    servers:
+      - address: "order-svc:8080"
+      - address: "order-svc-2:8080"
+
+# Rate limiting zones
+limit_req_zones:
+  - name: api
+    key: $binary_remote_addr
+    zone: api:10m
+    rate: 100r/s
+  - name: public_api
+    key: $binary_remote_addr  
+    zone: public:10m
+    rate: 10r/s
+
+servers:
+  - listen: "443 ssl"
+    server_name: "api.example.com"
+    
+    ssl:
+      certificate: "/etc/ssl/api.crt"
+      certificate_key: "/etc/ssl/api.key"
+    
+    # Global API settings
+    applyTemplates:
+      - modern_ssl
+      - cors
+    
+    add_header:
+      X-API-Gateway: "nginx-yaml-entrypoint"
+      X-RateLimit-Limit: "$limit_req_rate"
+    
+    locations:
+      # User service endpoints
+      - path: "~ ^/api/v1/users"
+        proxy_pass: "http://user_service"
+        applyTemplates:
+          - reverse_proxy
+          - cache_proxy
+        limit_req:
+          zone: api
+          burst: 50
+        proxy_cache_valid:
+          "200": "10m"
+          "404": "1m"
+      
+      # Order service endpoints  
+      - path: "~ ^/api/v1/orders"
+        proxy_pass: "http://order_service"
+        applyTemplates:
+          - reverse_proxy
+          - auth_required
+        limit_req:
+          zone: api
+          burst: 30
+      
+      # Public API (more restrictive)
+      - path: "~ ^/api/public"
+        proxy_pass: "http://user_service" 
+        applyTemplates:
+          - reverse_proxy
+          - cache_proxy
+        limit_req:
+          zone: public_api
+          burst: 5
+        proxy_cache_valid:
+          "200": "1h"
+      
+      # API documentation
+      - path: "/docs"
+        root: "/var/www/api-docs"
+        index: ["index.html"]
+        applyTemplates:
+          - static_files
+      
+      # Health and metrics
+      - path: "/health"
+        applyTemplates:
+          - health_check
+      
+      - path: "/metrics"
+        configs:
+          access_log: "off"  
+          return: "200 'metrics endpoint'"
+        allow:
+          - "10.0.0.0/8"
+          - "192.168.0.0/16"
+        deny:
+          - "all"
